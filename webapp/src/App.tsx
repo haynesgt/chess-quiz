@@ -6,16 +6,6 @@ function App() {
   return (
     <div className="App">
     <ChessQuiz></ChessQuiz>
-    <div className="footer">
-      Keyboard commands: <br/>
-      <ul>
-        <li>Left arrow: undo</li>
-        <li>Right arrow: random move</li>
-        <li>Up arrow: Reset</li>
-        <li>f: flip side</li>
-      </ul>
-      You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noopener">Lichess</a>, then load it here
-    </div>
     </div>
   );
 }

@@ -246,9 +246,7 @@ export function ChessQuiz() {
     useEffect(() => {
         const pgnsJson = localStorage.getItem("pgns");
         loadSavedPgns(pgnsJson);
-        // add lichess-style shortcuts to the window
         function onKeyDown(e: KeyboardEvent) {
-            // ignore keypresses in textareas and inputs
             if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) {
                 return;
             }
@@ -407,6 +405,16 @@ export function ChessQuiz() {
             <button onClick={() => dispatch({ type: 'toggleShowLastMoves' })}>{ showLastMoves ? "Hide" : "Show" }</button>
             <br/>
             End of line: { isEndOfLine ? "Yes" : "No" }
+            </div>
+            <div className="footer">
+            Keyboard commands: <br/>
+            <ul>
+                <li>Left arrow: undo</li>
+                <li>Right arrow: random move</li>
+                <li>Up arrow: Reset</li>
+                <li>F: flip side</li>
+            </ul>
+            You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noopener">Lichess</a>, then load it here
             </div>
         </div>
     )
