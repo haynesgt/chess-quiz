@@ -74,7 +74,7 @@ const initialChessQuizState: ChessQuizState = {
 };
 
 type ChessQuizAction = { type: 'playMove', move: string } | { type: 'playComputerMove' } | { type: 'undoMove' } | { type: 'resetPosition' } | { type: 'setMovesByPosition', movesByPosition: { [fen: string]: string[] } } | { type: 'setSavedPgns', savedPgns: SavedPgn[] } | { type: 'setSquareSize', squareSize: number } | { type: 'setPgn', pgn: string } | { type: 'setDb', db: Database } | { type: 'setFlipped', flipped: boolean }
-| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'};
+| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'} | {type: 'jumpToRandomPosition' };
 
 function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): ChessQuizState {
     switch (action.type) {
@@ -158,6 +158,19 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
             return {
                 ...state,
                 showLastMoves: !state.showLastMoves,
+            };
+        case 'jumpToRandomPosition':
+            const playerTurn = state.flipped ? 'b' : 'w';
+            const possibleFens = Object.keys(state.movesByPosition).filter(
+                fen => new Position(fen).turn() === playerTurn
+            );
+            if (possibleFens.length === 0) {
+                return state;
+            }
+            return {
+                ...state,
+                position: new Position(possibleFens[Math.floor(Math.random() * possibleFens.length)]),
+                moveStack: [],
             };
         default:
             throw new Error("Unknown action type: " + ((action as any)?.type));
@@ -310,7 +323,9 @@ export function ChessQuiz() {
     const lastMove = moveStack.slice(position.turn() === playerTurn ? -2 : -1)[0];
     const allowedLastMoves = movesByPosition[lastMove?.position?.fen()];
     const lastMoveWasFailure = lastMove && allowedLastMoves && !allowedLastMoves.includes(lastMove.move);
+    const isEndOfLine = !(movesByPosition[position.fen()]?.length);
 
+    console.log(position);
     return (
         <div>
             PGN: <Select options={gameSelectOptions} onChange={(e) => {
@@ -333,8 +348,9 @@ export function ChessQuiz() {
             <button onClick={() => resetPosition()}>Reset</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => undoMove()}>Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({ type: 'playComputerMove' })}>Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => dispatch({ type: 'jumpToRandomPosition' })}>Random position</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <span onClick={() => dispatch({ type: 'toggleComputer' })}><input type="checkbox" checked={state.computerEnabled} onChange={(e) => {}}></input>Auto move enabled</span>&nbsp;&nbsp;&nbsp;&nbsp;
-            
+
             <br/>
             {
                 convertMovesToPgn(moveStack.map(move => move.move))
@@ -351,18 +367,22 @@ export function ChessQuiz() {
                 moveArrowVisible={true}
             />
             <br/>
-            <div className={"feedback " + (lastMoveWasFailure ? "failure" : allowedLastMoves ? "success" : "unknown")}>
+            <button onClick={() => undoMove()}>Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <br/>
+            <div className={"feedback " + (lastMoveWasFailure ? "failure" : isEndOfLine ? "finished" : allowedLastMoves ? "success" : "unknown")}>
             Last Move: { lastMove?.move }
             <br/>
             Move was in PGN: { allowedLastMoves ? (lastMove && allowedLastMoves?.includes(lastMove?.move) ? "Yes" : "No") : "Position not part of quiz" }
             <br/>
-            {
+            Allowed last moves: {
                 showLastMoves && (<>
-                        Allowed last moves: { allowedLastMoves?.join(", ") }
+                        { allowedLastMoves?.join(", ") }
                     </>)
             }
             &nbsp;
             <button onClick={() => dispatch({ type: 'toggleShowLastMoves' })}>{ showLastMoves ? "Hide" : "Show" }</button>
+            <br/>
+            End of line: { isEndOfLine ? "Yes" : "No" }
             </div>
         </div>
     )

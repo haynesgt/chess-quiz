@@ -46,6 +46,10 @@
 }
 
 .feedback.unknown {
+  background-color: lightgray;
+}
+
+.feedback.finished {
   background-color: lightblue;
 }
 
