@@ -9,6 +9,8 @@ import * as kokopu from "kokopu";
 (window as any).pgnWrite = pgnWrite;
 (window as any).kokopu = kokopu;
 
+const START_FEN = new Position().fen();
+
 interface SavedPgn {
     title?: string;
     pgn?: string;
@@ -22,7 +24,7 @@ interface MoveAtPosition {
 
 function pgnReadSafe(pgn: string): Database | undefined {
     try {
-        const db = pgnRead(pgn);
+        const db = pgnRead(pgn.replace(`Variant "From Position"`, `Variant "Standard"`));
         db.game(0);
         return db;
     } catch (e) {
@@ -124,7 +126,7 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
         case 'resetPosition':
             return {
                 ...state,
-                position: new Position(),
+                position: state.db == undefined ? new Position() : state.db.game(0).initialPosition(),
                 moveStack: [],
             };
         case 'setMovesByPosition':
@@ -175,7 +177,10 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
         case 'jumpToRandomPosition':
             const playerTurn = state.flipped ? 'b' : 'w';
             const possibleFens = Object.keys(state.movesByPosition).filter(
-                fen => new Position(fen).turn() === playerTurn
+                fen => {
+                    const position = new Position(fen);
+                    return position.fen() !== START_FEN && position.turn() === playerTurn;
+                }
             );
             if (possibleFens.length === 0) {
                 return state;
@@ -229,7 +234,7 @@ export function ChessQuiz() {
             return;
         }
         const pgns = JSON.parse(pgnJson);
-        dispatch({ type: 'setSavedPgns', savedPgns: pgns });
+        dispatch({ type: 'setSavedPgns', savedPgns: pgns.reverse() });
     }
 
     window.addEventListener('storage', e => {
@@ -243,6 +248,10 @@ export function ChessQuiz() {
         loadSavedPgns(pgnsJson);
         // add lichess-style shortcuts to the window
         function onKeyDown(e: KeyboardEvent) {
+            // ignore keypresses in textareas and inputs
+            if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) {
+                return;
+            }
             if (e.key === 'ArrowLeft') {
                 dispatch({ type: 'undoMove' });
             } else if (e.key === 'ArrowRight') {
@@ -292,7 +301,7 @@ export function ChessQuiz() {
         const newMovesByPosition = {} as { [fen: string]: string[] };
 
         function processGame(game: Game) {
-            processNode(game.nodes()[0], new Position());
+            processNode(game.nodes()[0], game.initialPosition());
         }
 
         function processNode(node: Node, previous: Position) {
@@ -323,6 +332,7 @@ export function ChessQuiz() {
             dispatch({ type: 'setMovesByPosition', movesByPosition: newMovesByPosition });
             (window as any).movesByPosition = newMovesByPosition;
         }
+        dispatch({ type: 'resetPosition' });
     }
 
     const gameSelectOptions = useMemo(() => savedPgns.map((pgn) => ({
