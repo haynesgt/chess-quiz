@@ -256,6 +256,8 @@ export function ChessQuiz() {
                 dispatch({ type: 'playComputerMove' });
             } else if (e.key === 'ArrowUp') {
                 resetPosition();
+            } else if (e.key === "ArrowDown") {
+                dispatch({ type: 'jumpToRandomPosition' });
             } else if (e.key === 'f') {
                 dispatch({ type: 'flip' });
             }
