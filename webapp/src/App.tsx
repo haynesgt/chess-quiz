@@ -14,7 +14,7 @@ function App() {
         <li>Up arrow: Reset</li>
         <li>f: flip side</li>
       </ul>
-      You can create a quiz at <a href="https://lichess.org/analysis" target="_blank">Lichess</a> and load it here
+      You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noopener">Lichess</a>, then load it here
     </div>
     </div>
   );
