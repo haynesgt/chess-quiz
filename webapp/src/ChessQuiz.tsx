@@ -22,14 +22,17 @@ interface MoveAtPosition {
     move: string;
 }
 
-function pgnReadSafe(pgn: string): Database | undefined {
+function pgnReadSafe(pgn: string, doAlert: boolean): Database | undefined {
     try {
         const db = pgnRead(pgn.replace(`Variant "From Position"`, `Variant "Standard"`));
         db.game(0);
         return db;
     } catch (e) {
         if (!pgn.endsWith("*")) {
-            return pgnReadSafe(pgn + " *");
+            return pgnReadSafe(pgn + " *", doAlert);
+        }
+        if (doAlert) {
+            alert("Invalid PGN: " + (e as any).message);
         }
         return undefined;
     }
@@ -128,7 +131,7 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
         case 'resetPosition':
             return {
                 ...state,
-                position: state.db == undefined ? new Position() : state.db.game(0).initialPosition(),
+                position: state.db === undefined ? new Position() : state.db.game(0).initialPosition(),
                 moveStack: [],
             };
         case 'setMovesByPosition':
@@ -284,7 +287,7 @@ export function ChessQuiz() {
     function savePgnToLocalStorage(pgn: string) {
         const pgnsJson = localStorage.getItem("pgns");
         const pgns = JSON.parse(pgnsJson || "[]");
-        const game = pgnReadSafe(pgn)?.game(0);
+        const game = pgnReadSafe(pgn, true)?.game(0);
         if (!game) return;
         pgns.push({ title: game.event(), pgn: pgnWrite(game), saveDate: new Date().toISOString() });
         localStorage.setItem("pgns", JSON.stringify(pgns));
@@ -295,8 +298,8 @@ export function ChessQuiz() {
         if (pgn === "") {
             return;
         }
-        const newDb = pgnReadSafe(pgn);
-        if (!newDb) return;
+        const newDb = pgnReadSafe(pgn, true);
+        if (!newDb) throw new Error("Invalid PGN");
         try {
             for (let i = 0; i < newDb.gameCount(); i++) {
                 newDb.game(i);
@@ -352,7 +355,7 @@ export function ChessQuiz() {
                 value: pgn.pgn,
                 label: (pgn.saveDate ? new Date(pgn.saveDate).toLocaleString() + " - " : "")
                   + pgn.title + " - "
-                  + (pgn.pgn ? pgnReadSafe(pgn.pgn)?.game(0).nodes(true).length : "0") + " moves - "
+                  + (pgn.pgn ? pgnReadSafe(pgn.pgn, false)?.game(0).nodes(true).length : "0") + " moves - "
                   + removeHeadersFromPgn(pgn.pgn || "").slice(0, 30),
             })),
              [savedPgns]);
@@ -363,29 +366,50 @@ export function ChessQuiz() {
     const lastMoveWasFailure = lastMove && allowedLastMoves && !allowedLastMoves.includes(lastMove.move);
     const isEndOfLine = !(movesByPosition[position.fen()]?.length);
 
+    // title, with backslashes and quotes unescaped
+    const tmpTitle = pgn.match(/\[Event\s+"([^\n]*)"\]/)?.[1]?.replace(/\\"/g, "\"")?.replace(/\\\\/g, "\\");;
+
     return (
         <div>
             PGN: <Select options={gameSelectOptions} onChange={(e) => {
                 if(e && e.value) {
                     dispatch({ type: 'setPgn', pgn: e.value });
-                    loadPgnToQuiz(e.value);
+                    try {
+                        loadPgnToQuiz(e.value);
+                    } catch (e) {
+                        console.error(e);
+                    }
                 }
             }}></Select>
+            <br/>
+            Title: <input onChange={(e) => {
+                // fix backslashes and quotes
+                const newTitle = e.target.value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+                if (tmpTitle !== undefined) {
+                    dispatch({ type: 'setPgn', pgn: pgn.replace(/\[Event\s+"([^\n]*)"\]/, `[Event "${newTitle}"]`) });
+                } else {
+                    dispatch({ type: 'setPgn', pgn: `[Event "${newTitle}"]\n${pgn}` });
+                }
+             }} value={tmpTitle || ""}></input>
             <br/>
             <textarea value={pgn} onChange={(e) => dispatch({ type: 'setPgn', pgn: e.target.value })} rows={10} cols={50}></textarea>
             <br/>
             <button onClick={() => {
-                loadPgnToQuiz(pgn);
-                savePgnToLocalStorage(pgn);
-            }}>Use and save PGN</button> (add a tag at the top like [Event "title"] to name it)
+                try {
+                    loadPgnToQuiz(pgn);
+                    savePgnToLocalStorage(pgn);
+                } catch (e) {
+                    console.error(e);
+                }
+            }}>Use and save PGN</button>
             <br/><br/>
-            <button onClick={() => dispatch({type: 'setFlipped', 'flipped': !flipped})}>Flip</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => dispatch({type: 'setFlipped', 'flipped': !flipped})}>F: Flip</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 1.1})}>+</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 0.9})}>-</button>&nbsp;&nbsp;&nbsp;&nbsp;
-            <button onClick={() => resetPosition()}>Reset</button>&nbsp;&nbsp;&nbsp;&nbsp;
-            <button onClick={() => undoMove()}>Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
-            <button onClick={() => dispatch({ type: 'playComputerMove' })}>Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
-            <button onClick={() => dispatch({ type: 'jumpToRandomPosition' })}>Random position</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => resetPosition()}>↑ Reset</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => undoMove()}>← Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => dispatch({ type: 'playComputerMove' })}>→ Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => dispatch({ type: 'jumpToRandomPosition' })}>↓ Random position</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <span onClick={() => dispatch({ type: 'toggleComputer' })}><input type="checkbox" checked={state.computerEnabled} onChange={(e) => {}}></input>Auto move enabled</span>&nbsp;&nbsp;&nbsp;&nbsp;
             <span onClick={() => dispatch({ type: 'toggleAutoRandomMove' })}><input type="checkbox" checked={state.autoRandomMove} onChange={(e) => {}}></input>Auto random move</span>&nbsp;&nbsp;&nbsp;&nbsp;
 
@@ -408,7 +432,7 @@ export function ChessQuiz() {
             <button onClick={() => undoMove()}>Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <br/>
             <div className={"feedback " + (lastMoveWasFailure ? "failure" : isEndOfLine ? "finished" : allowedLastMoves ? "success" : "unknown")}>
-            Last Move: { lastMove?.move }
+            Last move: { lastMove?.move }
             <br/>
             Move was in PGN: { allowedLastMoves ? (lastMove && allowedLastMoves?.includes(lastMove?.move) ? "Yes" : "No") : "Position not part of quiz" }
             <br/>
@@ -430,7 +454,7 @@ export function ChessQuiz() {
                 <li>Up arrow: Reset</li>
                 <li>F: flip side</li>
             </ul>
-            You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noopener">Lichess</a>, then load it here
+            You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noreferrer">Lichess</a>, then load it here
             </div>
         </div>
     )
