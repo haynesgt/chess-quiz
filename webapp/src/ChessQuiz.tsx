@@ -1,6 +1,6 @@
 import { Chessboard } from 'kokopu-react';
 import { Position, Game, Database, Variation, Node, pgnRead, exception, pgnWrite } from "kokopu";
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import Select from 'react-select';
 
 import * as kokopu from "kokopu";
@@ -76,7 +76,8 @@ function removeHeadersFromPgn(pgn: string) {
     flipped: boolean;
     computerEnabled: boolean;
     showLastMoves: boolean;
-    autoRandomMove: boolean;
+    autoRandomPosition: boolean;
+    selectedSavedPgn: SavedPgn | undefined;
 }
 
 const initialChessQuizState: ChessQuizState = {
@@ -90,11 +91,12 @@ const initialChessQuizState: ChessQuizState = {
     flipped: false,
     computerEnabled: true,
     showLastMoves: true,
-    autoRandomMove: false,
+    autoRandomPosition: false,
+    selectedSavedPgn: undefined,
 };
 
 type ChessQuizAction = { type: 'playMove', move: string } | { type: 'playComputerMove' } | { type: 'undoMove' } | { type: 'resetPosition' } | { type: 'setMovesByPosition', movesByPosition: { [fen: string]: string[] } } | { type: 'setSavedPgns', savedPgns: SavedPgn[] } | { type: 'setSquareSize', squareSize: number } | { type: 'setPgn', pgn: string } | { type: 'setDb', db: Database } | { type: 'setFlipped', flipped: boolean }
-| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'} | {type: 'jumpToRandomPosition' } | { type: 'toggleAutoRandomMove' };
+| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'} | {type: 'jumpToRandomPosition' } | { type: 'toggleautoRandomPosition' } | { type: 'setSelectedSavedPgn', selectedSavedPgn: SavedPgn | undefined };
 
 function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): ChessQuizState {
     switch (action.type) {
@@ -195,10 +197,15 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
                 position: new Position(possibleFens[Math.floor(Math.random() * possibleFens.length)]),
                 moveStack: [],
             };
-        case 'toggleAutoRandomMove':
+        case 'toggleautoRandomPosition':
             return {
                 ...state,
-                autoRandomMove: !state.autoRandomMove,
+                autoRandomPosition: !state.autoRandomPosition,
+            };
+        case 'setSelectedSavedPgn':
+            return {
+                ...state,
+                selectedSavedPgn: action.selectedSavedPgn,
             };
         default:
             throw new Error("Unknown action type: " + ((action as any)?.type));
@@ -208,8 +215,9 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
 export function ChessQuiz() {
 
     const [ state, dispatch ] = useReducer(chessQuizReducer, initialChessQuizState);
+    const [ showPgnImporter, setShowPgnImporter ] = useState(true);
 
-    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack, showLastMoves, autoRandomMove } = state;
+    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack, showLastMoves, autoRandomPosition } = state;
 
     (window as any).position = position;
     (window as any).db = db;
@@ -233,10 +241,13 @@ export function ChessQuiz() {
         playMove(move);
         const playerTurn = flipped ? 'b' : 'w';
         if (position.turn() === playerTurn) {
-            if (autoRandomMove) {
-                setTimeout(() => {
-                    dispatch({ type: 'jumpToRandomPosition' });
-                }, 500);
+            if (autoRandomPosition) {
+                // if the move was good, jump to a random position
+                if (movesByPosition[position.fen()]?.includes(move)) {
+                    setTimeout(() => {
+                        dispatch({ type: 'jumpToRandomPosition' });
+                    }, 500);
+                }
             } else {
                 setTimeout(() => {
                     dispatch({ type: 'playComputerMove' });
@@ -352,7 +363,7 @@ export function ChessQuiz() {
     }
 
     const gameSelectOptions = useMemo(() => savedPgns.map((pgn) => ({
-                value: pgn.pgn,
+                value: pgn,
                 label: (pgn.saveDate ? new Date(pgn.saveDate).toLocaleString() + " - " : "")
                   + pgn.title + " - "
                   + (pgn.pgn ? pgnReadSafe(pgn.pgn, false)?.game(0).nodes(true).length : "0") + " moves - "
@@ -371,18 +382,38 @@ export function ChessQuiz() {
 
     return (
         <div>
-            PGN: <Select options={gameSelectOptions} onChange={(e) => {
-                if(e && e.value) {
-                    dispatch({ type: 'setPgn', pgn: e.value });
+            PGN Importer:&nbsp;
+            <button onClick={() => setShowPgnImporter(!showPgnImporter)}>{ showPgnImporter ? "Hide" : "Show" }</button>
+            <br/>
+            { showPgnImporter && (<>
+            <Select placeholder="Select a saved PGN" options={gameSelectOptions} onChange={(e) => {
+                if(e && e.value && e.value.pgn) {
+                    dispatch({ type: 'setSelectedSavedPgn', selectedSavedPgn: e.value });
+                    dispatch({ type: 'setPgn', pgn: e.value.pgn });
                     try {
-                        loadPgnToQuiz(e.value);
+                        loadPgnToQuiz(e.value.pgn);
                     } catch (e) {
                         console.error(e);
                     }
                 }
             }}></Select>
-            <br/>
-            Title: <input onChange={(e) => {
+            The quiz loads as soon as you select a PGN.&nbsp;
+            <button onClick={() => {
+                if (state.selectedSavedPgn && window.confirm("Are you sure you want to delete this PGN?")) {
+                    const pgnsJson = localStorage.getItem("pgns");
+                    const pgns = JSON.parse(pgnsJson || "[]");
+                    const index = pgns.findIndex((pgn: SavedPgn | any) => pgn?.saveDate === state.selectedSavedPgn?.saveDate);
+                    if (index !== -1) {
+                        pgns.splice(index, 1);
+                        localStorage.setItem("pgns", JSON.stringify(pgns));
+                        loadSavedPgns(JSON.stringify(pgns));
+                        dispatch({ type: 'setSelectedSavedPgn', selectedSavedPgn: undefined });
+                        dispatch({ type: 'setPgn', pgn: "" });
+                    }
+                }
+            }}>Delete</button>
+            <br/><br/>
+            <input style={{"width": "100%"}} onChange={(e) => {
                 // fix backslashes and quotes
                 const newTitle = e.target.value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
                 if (tmpTitle !== undefined) {
@@ -392,7 +423,7 @@ export function ChessQuiz() {
                 }
              }} value={tmpTitle || ""}></input>
             <br/>
-            <textarea value={pgn} onChange={(e) => dispatch({ type: 'setPgn', pgn: e.target.value })} rows={10} cols={50}></textarea>
+            <textarea style={{"width": "100%"}} value={pgn} onChange={(e) => dispatch({ type: 'setPgn', pgn: e.target.value })} rows={10} cols={50}></textarea>
             <br/>
             <button onClick={() => {
                 try {
@@ -401,8 +432,10 @@ export function ChessQuiz() {
                 } catch (e) {
                     console.error(e);
                 }
-            }}>Use and save PGN</button>
-            <br/><br/>
+            }}>Use and save PGN</button> You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noreferrer">Lichess</a>, then load it here
+            <br/>
+            </>)}<br/>
+            
             <button onClick={() => dispatch({type: 'setFlipped', 'flipped': !flipped})}>F: Flip</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 1.1})}>+</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 0.9})}>-</button>&nbsp;&nbsp;&nbsp;&nbsp;
@@ -411,7 +444,7 @@ export function ChessQuiz() {
             <button onClick={() => dispatch({ type: 'playComputerMove' })}>→ Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({ type: 'jumpToRandomPosition' })}>↓ Random position</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <span onClick={() => dispatch({ type: 'toggleComputer' })}><input type="checkbox" checked={state.computerEnabled} onChange={(e) => {}}></input>Auto move enabled</span>&nbsp;&nbsp;&nbsp;&nbsp;
-            <span onClick={() => dispatch({ type: 'toggleAutoRandomMove' })}><input type="checkbox" checked={state.autoRandomMove} onChange={(e) => {}}></input>Auto random move</span>&nbsp;&nbsp;&nbsp;&nbsp;
+            <span onClick={() => dispatch({ type: 'toggleautoRandomPosition' })}><input type="checkbox" checked={state.autoRandomPosition} onChange={(e) => {}}></input>Auto random position</span>&nbsp;&nbsp;&nbsp;&nbsp;
 
             <br/>
             {
@@ -446,18 +479,6 @@ export function ChessQuiz() {
             <br/>
             End of line: { isEndOfLine ? "Yes" : "No" }
             </div>
-            <div className="footer">
-            Keyboard commands: <br/>
-            <ul>
-                <li>Left arrow: undo</li>
-                <li>Right arrow: random move</li>
-                <li>Up arrow: Reset</li>
-                <li>F: flip side</li>
-            </ul>
-            You can create PGN for a quiz at <a href="https://lichess.org/analysis" target="_blank" rel="noreferrer">Lichess</a>, then load it here
-            </div>
         </div>
     )
 }
-
-
