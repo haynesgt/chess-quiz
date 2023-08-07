@@ -73,6 +73,7 @@ function removeHeadersFromPgn(pgn: string) {
     flipped: boolean;
     computerEnabled: boolean;
     showLastMoves: boolean;
+    autoRandomMove: boolean;
 }
 
 const initialChessQuizState: ChessQuizState = {
@@ -86,10 +87,11 @@ const initialChessQuizState: ChessQuizState = {
     flipped: false,
     computerEnabled: true,
     showLastMoves: true,
+    autoRandomMove: false,
 };
 
 type ChessQuizAction = { type: 'playMove', move: string } | { type: 'playComputerMove' } | { type: 'undoMove' } | { type: 'resetPosition' } | { type: 'setMovesByPosition', movesByPosition: { [fen: string]: string[] } } | { type: 'setSavedPgns', savedPgns: SavedPgn[] } | { type: 'setSquareSize', squareSize: number } | { type: 'setPgn', pgn: string } | { type: 'setDb', db: Database } | { type: 'setFlipped', flipped: boolean }
-| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'} | {type: 'jumpToRandomPosition' };
+| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'} | {type: 'jumpToRandomPosition' } | { type: 'toggleAutoRandomMove' };
 
 function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): ChessQuizState {
     switch (action.type) {
@@ -190,6 +192,11 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
                 position: new Position(possibleFens[Math.floor(Math.random() * possibleFens.length)]),
                 moveStack: [],
             };
+        case 'toggleAutoRandomMove':
+            return {
+                ...state,
+                autoRandomMove: !state.autoRandomMove,
+            };
         default:
             throw new Error("Unknown action type: " + ((action as any)?.type));
     }
@@ -199,7 +206,7 @@ export function ChessQuiz() {
 
     const [ state, dispatch ] = useReducer(chessQuizReducer, initialChessQuizState);
 
-    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack, showLastMoves } = state;
+    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack, showLastMoves, autoRandomMove } = state;
 
     (window as any).position = position;
     (window as any).db = db;
@@ -223,9 +230,15 @@ export function ChessQuiz() {
         playMove(move);
         const playerTurn = flipped ? 'b' : 'w';
         if (position.turn() === playerTurn) {
-            setTimeout(() => {
-                dispatch({ type: 'playComputerMove' });
-            }, 500);
+            if (autoRandomMove) {
+                setTimeout(() => {
+                    dispatch({ type: 'jumpToRandomPosition' });
+                }, 500);
+            } else {
+                setTimeout(() => {
+                    dispatch({ type: 'playComputerMove' });
+                }, 500);
+            }
         }
     }
 
@@ -374,6 +387,7 @@ export function ChessQuiz() {
             <button onClick={() => dispatch({ type: 'playComputerMove' })}>Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({ type: 'jumpToRandomPosition' })}>Random position</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <span onClick={() => dispatch({ type: 'toggleComputer' })}><input type="checkbox" checked={state.computerEnabled} onChange={(e) => {}}></input>Auto move enabled</span>&nbsp;&nbsp;&nbsp;&nbsp;
+            <span onClick={() => dispatch({ type: 'toggleAutoRandomMove' })}><input type="checkbox" checked={state.autoRandomMove} onChange={(e) => {}}></input>Auto random move</span>&nbsp;&nbsp;&nbsp;&nbsp;
 
             <br/>
             {
