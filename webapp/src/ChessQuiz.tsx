@@ -20,6 +20,19 @@ interface MoveAtPosition {
     move: string;
 }
 
+function pgnReadSafe(pgn: string): Database | undefined {
+    try {
+        const db = pgnRead(pgn);
+        db.game(0);
+        return db;
+    } catch (e) {
+        if (!pgn.endsWith("*")) {
+            return pgnReadSafe(pgn + " *");
+        }
+        return undefined;
+    }
+}
+
 function convertMovesToPgn(moves: string[]) {
     let pgn = '';
   
@@ -246,20 +259,22 @@ export function ChessQuiz() {
         };
     }, []);
 
-    function savePgn(pgn: string) {
+    function savePgnToLocalStorage(pgn: string) {
         const pgnsJson = localStorage.getItem("pgns");
         const pgns = JSON.parse(pgnsJson || "[]");
-        const game = pgnRead(pgn).game(0);
-        pgns.push({ title: game.event(), pgn, saveDate: new Date().toISOString() });
+        const game = pgnReadSafe(pgn)?.game(0);
+        if (!game) return;
+        pgns.push({ title: game.event(), pgn: pgnWrite(game), saveDate: new Date().toISOString() });
         localStorage.setItem("pgns", JSON.stringify(pgns));
         loadSavedPgns(JSON.stringify(pgns));
     }
 
-    function loadPgn(pgn: string) {
+    function loadPgnToQuiz(pgn: string) {
         if (pgn === "") {
             return;
         }
-        const newDb = pgnRead(pgn);
+        const newDb = pgnReadSafe(pgn);
+        if (!newDb) return;
         try {
             for (let i = 0; i < newDb.gameCount(); i++) {
                 newDb.game(i);
@@ -314,7 +329,7 @@ export function ChessQuiz() {
                 value: pgn.pgn,
                 label: (pgn.saveDate ? new Date(pgn.saveDate).toLocaleString() + " - " : "")
                   + pgn.title + " - "
-                  + (pgn.pgn ? pgnRead(pgn.pgn).game(0).nodes(true).length : "0") + " moves - "
+                  + (pgn.pgn ? pgnReadSafe(pgn.pgn)?.game(0).nodes(true).length : "0") + " moves - "
                   + removeHeadersFromPgn(pgn.pgn || "").slice(0, 30),
             })),
              [savedPgns]);
@@ -325,22 +340,21 @@ export function ChessQuiz() {
     const lastMoveWasFailure = lastMove && allowedLastMoves && !allowedLastMoves.includes(lastMove.move);
     const isEndOfLine = !(movesByPosition[position.fen()]?.length);
 
-    console.log(position);
     return (
         <div>
             PGN: <Select options={gameSelectOptions} onChange={(e) => {
                 if(e && e.value) {
                     dispatch({ type: 'setPgn', pgn: e.value });
-                    loadPgn(e.value);
+                    loadPgnToQuiz(e.value);
                 }
             }}></Select>
             <br/>
             <textarea value={pgn} onChange={(e) => dispatch({ type: 'setPgn', pgn: e.target.value })} rows={10} cols={50}></textarea>
             <br/>
             <button onClick={() => {
-                loadPgn(pgn);
-                savePgn(pgn);
-            }}>Use and save PGN</button>
+                loadPgnToQuiz(pgn);
+                savePgnToLocalStorage(pgn);
+            }}>Use and save PGN</button> (add a tag at the top like [Event "title"] to name it)
             <br/><br/>
             <button onClick={() => dispatch({type: 'setFlipped', 'flipped': !flipped})}>Flip</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 1.1})}>+</button>&nbsp;&nbsp;&nbsp;&nbsp;
