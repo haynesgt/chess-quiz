@@ -56,6 +56,8 @@ function removeHeadersFromPgn(pgn: string) {
     pgn: string;
     db: Database | undefined;
     flipped: boolean;
+    computerEnabled: boolean;
+    showLastMoves: boolean;
 }
 
 const initialChessQuizState: ChessQuizState = {
@@ -67,9 +69,12 @@ const initialChessQuizState: ChessQuizState = {
     pgn: "",
     db: undefined as Database | undefined,
     flipped: false,
+    computerEnabled: true,
+    showLastMoves: true,
 };
 
-type ChessQuizAction = { type: 'playMove', move: string } | { type: 'playComputerMove' } | { type: 'undoMove' } | { type: 'resetPosition' } | { type: 'setMovesByPosition', movesByPosition: { [fen: string]: string[] } } | { type: 'setSavedPgns', savedPgns: SavedPgn[] } | { type: 'setSquareSize', squareSize: number } | { type: 'setPgn', pgn: string } | { type: 'setDb', db: Database } | { type: 'setFlipped', flipped: boolean };
+type ChessQuizAction = { type: 'playMove', move: string } | { type: 'playComputerMove' } | { type: 'undoMove' } | { type: 'resetPosition' } | { type: 'setMovesByPosition', movesByPosition: { [fen: string]: string[] } } | { type: 'setSavedPgns', savedPgns: SavedPgn[] } | { type: 'setSquareSize', squareSize: number } | { type: 'setPgn', pgn: string } | { type: 'setDb', db: Database } | { type: 'setFlipped', flipped: boolean }
+| { type: 'flip' } | { type: 'toggleComputer' } | {type: 'toggleShowLastMoves'};
 
 function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): ChessQuizState {
     switch (action.type) {
@@ -85,6 +90,9 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
                 moveStack: [...state.moveStack, {position: state.position, move: action.move}],
             };
         case 'playComputerMove':
+            if (!state.computerEnabled) {
+                return state;
+            }
             const possibleMoves = state.movesByPosition[state.position.fen()];
             if (!possibleMoves) {
                 return state;
@@ -92,6 +100,9 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
             const move = state.movesByPosition[state.position.fen()][Math.floor(Math.random() * possibleMoves.length)];
             return chessQuizReducer(state, { type: 'playMove', move });
         case 'undoMove':
+            if (state.moveStack.length === 0) {
+                return state;
+            }
             return {
                 ...state,
                 position: state.moveStack[state.moveStack.length - 1].position,
@@ -133,6 +144,21 @@ function chessQuizReducer(state: ChessQuizState, action: ChessQuizAction): Chess
                 ...state,
                 flipped: action.flipped,
             };
+        case 'flip':
+            return {
+                ...state,
+                flipped: !state.flipped,
+            };
+        case 'toggleComputer':
+            return {
+                ...state,
+                computerEnabled: !state.computerEnabled,
+            };
+        case 'toggleShowLastMoves':
+            return {
+                ...state,
+                showLastMoves: !state.showLastMoves,
+            };
         default:
             throw new Error("Unknown action type: " + ((action as any)?.type));
     }
@@ -142,7 +168,7 @@ export function ChessQuiz() {
 
     const [ state, dispatch ] = useReducer(chessQuizReducer, initialChessQuizState);
 
-    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack } = state;
+    const { savedPgns, squareSize, pgn, db, flipped, movesByPosition, position, moveStack, showLastMoves } = state;
 
     (window as any).position = position;
     (window as any).db = db;
@@ -164,10 +190,11 @@ export function ChessQuiz() {
 
     function handleMovePlayed(move: string) {
         playMove(move);
-        if (position.turn() === "w") {
+        const playerTurn = flipped ? 'b' : 'w';
+        if (position.turn() === playerTurn) {
             setTimeout(() => {
                 dispatch({ type: 'playComputerMove' });
-            }, 1000);
+            }, 500);
         }
     }
 
@@ -188,6 +215,22 @@ export function ChessQuiz() {
     useEffect(() => {
         const pgnsJson = localStorage.getItem("pgns");
         loadSavedPgns(pgnsJson);
+        // add lichess-style shortcuts to the window
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === 'ArrowLeft') {
+                dispatch({ type: 'undoMove' });
+            } else if (e.key === 'ArrowRight') {
+                dispatch({ type: 'playComputerMove' });
+            } else if (e.key === 'ArrowUp') {
+                resetPosition();
+            } else if (e.key === 'f') {
+                dispatch({ type: 'flip' });
+            }
+        }
+        window.addEventListener('keydown', onKeyDown);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+        };
     }, []);
 
     function savePgn(pgn: string) {
@@ -256,13 +299,17 @@ export function ChessQuiz() {
 
     const gameSelectOptions = useMemo(() => savedPgns.map((pgn) => ({
                 value: pgn.pgn,
-                label: (pgn.saveDate ? new Date(pgn.saveDate).toLocaleString() + " - " : "") + pgn.title + " - " + removeHeadersFromPgn(pgn.pgn || "").slice(0, 30),
+                label: (pgn.saveDate ? new Date(pgn.saveDate).toLocaleString() + " - " : "")
+                  + pgn.title + " - "
+                  + (pgn.pgn ? pgnRead(pgn.pgn).game(0).nodes(true).length : "0") + " moves - "
+                  + removeHeadersFromPgn(pgn.pgn || "").slice(0, 30),
             })),
              [savedPgns]);
 
     const playerTurn = flipped ? 'b' : 'w';
-    const lastMove = moveStack.slice(position.turn() == playerTurn ? -2 : -1)[0];
+    const lastMove = moveStack.slice(position.turn() === playerTurn ? -2 : -1)[0];
     const allowedLastMoves = movesByPosition[lastMove?.position?.fen()];
+    const lastMoveWasFailure = lastMove && allowedLastMoves && !allowedLastMoves.includes(lastMove.move);
 
     return (
         <div>
@@ -285,6 +332,9 @@ export function ChessQuiz() {
             <button onClick={() => dispatch({type: 'setSquareSize', squareSize: squareSize * 0.9})}>-</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => resetPosition()}>Reset</button>&nbsp;&nbsp;&nbsp;&nbsp;
             <button onClick={() => undoMove()}>Undo</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <button onClick={() => dispatch({ type: 'playComputerMove' })}>Play random move</button>&nbsp;&nbsp;&nbsp;&nbsp;
+            <span onClick={() => dispatch({ type: 'toggleComputer' })}><input type="checkbox" checked={state.computerEnabled} onChange={(e) => {}}></input>Auto move enabled</span>&nbsp;&nbsp;&nbsp;&nbsp;
+            
             <br/>
             {
                 convertMovesToPgn(moveStack.map(move => move.move))
@@ -301,11 +351,21 @@ export function ChessQuiz() {
                 moveArrowVisible={true}
             />
             <br/>
-            Last Move: { lastMove?.move }.
+            <div className={"feedback " + (lastMoveWasFailure ? "failure" : allowedLastMoves ? "success" : "unknown")}>
+            Last Move: { lastMove?.move }
             <br/>
-            Move was in PGN: { lastMove && allowedLastMoves?.includes(lastMove?.move) ? "Yes" : "No" }.
+            Move was in PGN: { allowedLastMoves ? (lastMove && allowedLastMoves?.includes(lastMove?.move) ? "Yes" : "No") : "Position not part of quiz" }
             <br/>
-            Allowed last moves: { allowedLastMoves?.join(", ") }
+            {
+                showLastMoves && (<>
+                        Allowed last moves: { allowedLastMoves?.join(", ") }
+                    </>)
+            }
+            &nbsp;
+            <button onClick={() => dispatch({ type: 'toggleShowLastMoves' })}>{ showLastMoves ? "Hide" : "Show" }</button>
+            </div>
         </div>
     )
 }
+
+

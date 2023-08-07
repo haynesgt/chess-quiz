@@ -1,5 +1,5 @@
 .App {
-  text-align: center;
+  margin: 16px;
 }
 
 .App-logo {
@@ -35,4 +35,21 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.feedback.failure {
+  background-color: lightcoral;
+}
+
+.feedback.success {
+  background-color: lightgreen;
+}
+
+.feedback.unknown {
+  background-color: lightblue;
+}
+
+.footer {
+  border-top: 1px solid black;
+  margin-top: 32px;
 }
